@@ -181,7 +181,7 @@ void PluginJsHandler::freezeCheckThread()
 {
 	while (m_running)
 	{
-		if (nowMs() - m_lastUiHeartbeatMs > 30000)
+		if (nowMs() - m_lastUiHeartbeatMs > 90000)
 		{
 			blog(LOG_ERROR, "PluginJsHandler::freezeCheckThread - UI seems frozen.");
 			int result = MessageBoxA(0, "The UI is not responding.\nForce OBS to close? A crash report will be written.", "Frozen", MB_YESNO | MB_ICONERROR);
@@ -194,7 +194,7 @@ void PluginJsHandler::freezeCheckThread()
 			}
 
 			// Keep monitoring, but don't ask again until this freeze is over.
-			while (m_running && nowMs() - m_lastUiHeartbeatMs > 30000)
+			while (m_running && nowMs() - m_lastUiHeartbeatMs > 90000)
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 			continue;

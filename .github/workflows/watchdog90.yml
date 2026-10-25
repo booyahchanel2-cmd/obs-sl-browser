@@ -1,0 +1,47 @@
+name: Build OBS 33 plugin with 90 second watchdog
+on:
+  push:
+    branches: [fix/watchdog-90s]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - name: Make 7-Zip available
+        run: '"C:\Program Files\7-Zip" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
+      - name: Build for OBS 33.0.0 x64
+        run: .\CI\dev_build.ps1 -ObsVersion "33.0.0" -Shallow -PluginOnly
+      - name: Package plugin and matching helpers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = 'builds/obs-studio-33.0.0/build_x64/plugins/obs-sl-browser/RelWithDebInfo'
+          New-Item -ItemType Directory -Path package | Out-Null
+          foreach ($name in @('sl-browser-plugin.dll', 'sl-browser.exe', 'sl-browser-page.exe')) {
+            $file = Join-Path $out $name
+            if (!(Test-Path $file)) { throw "Missing output: $file" }
+            Copy-Item $file package/
+          }
+          if (Test-Path "$out/streamlabs-app-icon.png") { Copy-Item "$out/streamlabs-app-icon.png" package/ }
+          Copy-Item LICENSE* package/
+          @(
+            'Unofficial custom Streamlabs plugin build'
+            'Target: OBS Studio 33.0.0 Windows x64'
+            'UI watchdog: 90 seconds (upstream: 30 seconds)'
+            "Source commit: $env:GITHUB_SHA"
+            'Unsigned. Build success is not a runtime compatibility test.'
+            'Keep a backup of your currently working plugin before replacing files.'
+          ) | Set-Content package/BUILD-INFO.txt
+          Get-ChildItem package -File | Get-FileHash -Algorithm SHA256 | Format-Table -AutoSize | Out-String -Width 300 | Set-Content package/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: streamlabs-obs33-watchdog90-windows-x64
+          path: package/
+          if-no-files-found: error
+          retention-days: 30
