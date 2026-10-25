@@ -1,0 +1,40 @@
+name: Scan existing watchdog90 artifact with Defender
+on:
+  push:
+    branches: [verify/watchdog90-defender]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scan:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Download and verify exact ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/booyahchanel2-cmd/obs-sl-browser/actions/artifacts/12586141171/zip' -Headers $headers -OutFile artifact.zip
+          $hash = (Get-FileHash artifact.zip -Algorithm SHA256).Hash.ToLower()
+          Write-Output "ZIP SHA256: $hash"
+          if ($hash -ne 'f4881dd3e75f33b757b5d08d4fdceba5b7368f37bc82f36c099a93a219e29e46') { throw 'Artifact hash mismatch' }
+          Expand-Archive artifact.zip -DestinationPath scan-target
+      - name: Update Defender and scan extracted binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Update-MpSignature
+          Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated | Format-List
+          $status = Get-MpComputerStatus
+          if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) { throw 'Defender is not active; scan cannot be validated.' }
+          $scanner = Join-Path $env:ProgramFiles 'Windows Defender/MpCmdRun.exe'
+          & $scanner -Scan -ScanType 3 -File "$env:GITHUB_WORKSPACE/scan-target" -DisableRemediation
+          $scanExit = $LASTEXITCODE
+          Write-Output "Defender scan exit code: $scanExit"
+          Get-MpThreat | Format-List *
+          Get-MpThreatDetection | Format-List *
+          if ($scanExit -ne 0) { throw "Defender scan did not return clean: $scanExit" }
+          Get-ChildItem scan-target -File | Get-FileHash -Algorithm SHA256 | Format-Table -AutoSize | Out-String -Width 300 | Write-Output
